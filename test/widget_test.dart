@@ -21,9 +21,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Mom').last);
     await tester.pumpAndSettle();
-    // Verify that the dropdown now shows "Mom".
-    expect(find.text('Mom'), findsWidgets); // Should find "Mom" in the dropdown
-    expect(find.text('Assign to'), findsNothing); // "Assign to" should no longer be visible
+    expect(find.text('Mom'), findsWidgets);
+    expect(find.text('Assign to'), findsNothing);
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
 
@@ -41,12 +40,47 @@ void main() {
         widget.style?.decoration == TextDecoration.lineThrough), findsOneWidget);
 
     // Delete the task.
-    await tester.drag(find.text('Buy groceries'), const Offset(-500, 0)); // Swipe left
-    await tester.pumpAndSettle(); // Wait for the SnackBar to appear
+    await tester.drag(find.text('Buy groceries'), const Offset(-500, 0));
+    await tester.pumpAndSettle();
     expect(find.text('Task "Buy groceries" deleted'), findsOneWidget);
 
     // Verify that the task is removed and the placeholder text reappears.
     expect(find.text('Buy groceries'), findsNothing);
     expect(find.text('Let’s start adding tasks!'), findsOneWidget);
+  });
+
+  testWidgets('Shopping list allows adding and deleting items', (WidgetTester tester) async {
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const FamilyToDoApp());
+
+    // Navigate to the shopping list screen.
+    await tester.tap(find.byIcon(Icons.shopping_cart));
+    await tester.pumpAndSettle();
+
+    // Verify that the shopping list title is displayed.
+    expect(find.text('Shopping List'), findsOneWidget);
+
+    // Verify that the placeholder text is displayed initially.
+    expect(find.text('Let’s start adding items!'), findsOneWidget);
+
+    // Add an item.
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Milk');
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    // Verify that the item is added.
+    expect(find.text('Milk'), findsOneWidget);
+    expect(find.text('Let’s start adding items!'), findsNothing);
+
+    // Delete the item.
+    await tester.drag(find.text('Milk'), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Item "Milk" deleted'), findsOneWidget);
+
+    // Verify that the item is removed and the placeholder text reappears.
+    expect(find.text('Milk'), findsNothing);
+    expect(find.text('Let’s start adding items!'), findsOneWidget);
   });
 }

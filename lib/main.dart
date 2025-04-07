@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'task.dart';
+import 'shopping_list.dart';
 
 void main() {
   runApp(const FamilyToDoApp());
@@ -37,7 +38,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
   // List to store tasks
   final List<Task> _tasks = [];
 
-  // List of family members (you can customize this list)
+  // List of family members
   final List<String> _familyMembers = ['Mom', 'Dad', 'Alex', 'Sam'];
 
   // Controller for the text field in the dialog
@@ -47,9 +48,8 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
   String? _selectedMember;
 
   // Method to show a dialog for adding a new task
-    // Method to show a dialog for adding a new task
   void _addTask() async {
-    _selectedMember = null; // Reset the selected member for each new task
+    _selectedMember = null;
     final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -84,7 +84,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context), // Cancel button
+                onPressed: () => Navigator.pop(context),
                 child: const Text('Cancel'),
               ),
               TextButton(
@@ -104,7 +104,6 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
       ),
     );
 
-    // If a new task was added, update the list and clear the controller
     if (result != null) {
       setState(() {
         _tasks.add(Task(
@@ -140,6 +139,18 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Family To-Do List'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.shopping_cart),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ShoppingListScreen()),
+              );
+            },
+            tooltip: 'Go to Shopping List',
+          ),
+        ],
       ),
       body: _tasks.isEmpty
           ? const Center(child: Text('Let’s start adding tasks!'))
@@ -192,4 +203,4 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     _taskController.dispose();
     super.dispose();
   }
-}//Adding a comment to test the code snippet
+}
