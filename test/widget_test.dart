@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:family_todo/main.dart';
 
 void main() {
+  setUp(() async {
+    // Clear SharedPreferences before each test
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('To-Do app allows adding, completing, deleting, and assigning tasks', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const FamilyToDoApp());

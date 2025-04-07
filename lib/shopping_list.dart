@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ShoppingListScreen extends StatefulWidget {
   const ShoppingListScreen({super.key});
@@ -9,10 +10,35 @@ class ShoppingListScreen extends StatefulWidget {
 
 class _ShoppingListScreenState extends State<ShoppingListScreen> {
   // List to store shopping items
-  final List<String> _shoppingItems = [];
+  List<String> _shoppingItems = [];
 
   // Controller for the text field in the dialog
   final TextEditingController _itemController = TextEditingController();
+
+  // SharedPreferences instance
+  late SharedPreferences _prefs;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadItems();
+  }
+
+  // Load items from SharedPreferences
+  Future<void> _loadItems() async {
+    _prefs = await SharedPreferences.getInstance();
+    final List<String>? items = _prefs.getStringList('shopping_items');
+    if (items != null) {
+      setState(() {
+        _shoppingItems = items;
+      });
+    }
+  }
+
+  // Save items to SharedPreferences
+  Future<void> _saveItems() async {
+    await _prefs.setStringList('shopping_items', _shoppingItems);
+  }
 
   // Method to add a new shopping item
   void _addItem() async {
@@ -26,7 +52,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context), // Cancel button
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
           TextButton(
@@ -45,6 +71,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
       setState(() {
         _shoppingItems.add(newItem);
       });
+      await _saveItems(); // Save items after adding
       _itemController.clear();
     }
   }
@@ -55,6 +82,7 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
     setState(() {
       _shoppingItems.removeAt(index);
     });
+    _saveItems(); // Save items after deleting
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Item "$itemName" deleted')),
     );

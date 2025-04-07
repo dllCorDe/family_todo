@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'task.dart';
 import 'shopping_list.dart';
 
@@ -36,7 +37,7 @@ class ToDoHomePage extends StatefulWidget {
 
 class _ToDoHomePageState extends State<ToDoHomePage> {
   // List to store tasks
-  final List<Task> _tasks = [];
+  List<Task> _tasks = [];
 
   // List of family members
   final List<String> _familyMembers = ['Mom', 'Dad', 'Alex', 'Sam'];
@@ -46,6 +47,32 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
 
   // Variable to store the selected family member in the dialog
   String? _selectedMember;
+
+  // SharedPreferences instance
+  late SharedPreferences _prefs;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
+  }
+
+  // Load tasks from SharedPreferences
+  Future<void> _loadTasks() async {
+    _prefs = await SharedPreferences.getInstance();
+    final List<String>? taskStrings = _prefs.getStringList('tasks');
+    if (taskStrings != null) {
+      setState(() {
+        _tasks = taskStrings.map((taskString) => Task.fromJson(taskString)).toList();
+      });
+    }
+  }
+
+  // Save tasks to SharedPreferences
+  Future<void> _saveTasks() async {
+    final List<String> taskStrings = _tasks.map((task) => task.toJson()).toList();
+    await _prefs.setStringList('tasks', taskStrings);
+  }
 
   // Method to show a dialog for adding a new task
   void _addTask() async {
@@ -111,6 +138,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
           assignedMember: result['assignedMember'],
         ));
       });
+      await _saveTasks();
       _taskController.clear();
       _selectedMember = null;
     }
@@ -121,6 +149,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     setState(() {
       _tasks[index].isCompleted = !_tasks[index].isCompleted;
     });
+    _saveTasks();
   }
 
   // Method to delete a task
@@ -129,6 +158,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     setState(() {
       _tasks.removeAt(index);
     });
+    _saveTasks();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Task "$taskName" deleted')),
     );
