@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_options.dart'; // Import the generated file
 import 'task.dart';
 import 'shopping_list.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const FamilyToDoApp());
 }
 
@@ -36,19 +42,10 @@ class ToDoHomePage extends StatefulWidget {
 }
 
 class _ToDoHomePageState extends State<ToDoHomePage> {
-  // List to store tasks
   List<Task> _tasks = [];
-
-  // List of family members
   final List<String> _familyMembers = ['Mom', 'Dad', 'Alex', 'Sam'];
-
-  // Controller for the text field in the dialog
   final TextEditingController _taskController = TextEditingController();
-
-  // Variable to store the selected family member in the dialog
   String? _selectedMember;
-
-  // SharedPreferences instance
   late SharedPreferences _prefs;
 
   @override
@@ -57,7 +54,6 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     _loadTasks();
   }
 
-  // Load tasks from SharedPreferences
   Future<void> _loadTasks() async {
     _prefs = await SharedPreferences.getInstance();
     final List<String>? taskStrings = _prefs.getStringList('tasks');
@@ -68,13 +64,11 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     }
   }
 
-  // Save tasks to SharedPreferences
   Future<void> _saveTasks() async {
     final List<String> taskStrings = _tasks.map((task) => task.toJson()).toList();
     await _prefs.setStringList('tasks', taskStrings);
   }
 
-  // Method to show a dialog for adding a new task
   void _addTask() async {
     _selectedMember = null;
     final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
@@ -144,7 +138,6 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     }
   }
 
-  // Method to toggle task completion
   void _toggleTaskCompletion(int index) {
     setState(() {
       _tasks[index].isCompleted = !_tasks[index].isCompleted;
@@ -152,7 +145,6 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
     _saveTasks();
   }
 
-  // Method to delete a task
   void _deleteTask(int index) {
     final String taskName = _tasks[index].name;
     setState(() {
