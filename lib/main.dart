@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'task.dart';
 import 'shopping_list.dart';
 import 'auth_screen.dart';
+import 'join_family_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,7 +39,25 @@ class FamilyToDoApp extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasData) {
-            return const ToDoHomePage();
+            // Check if the user has a familyId
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(snapshot.data!.uid)
+                  .get(),
+              builder: (context, userSnapshot) {
+                if (userSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                  final userData = userSnapshot.data!.data() as Map<String, dynamic>;
+                  if (userData.containsKey('familyId') && userData['familyId'] != null) {
+                    return const ToDoHomePage();
+                  }
+                }
+                return JoinFamilyScreen();
+              },
+            );
           }
           return const AuthScreen();
         },
@@ -57,9 +76,10 @@ class ToDoHomePage extends StatefulWidget {
 class _ToDoHomePageState extends State<ToDoHomePage> {
   final List<String> _familyMembers = ['Mom', 'Dad', 'Alex', 'Sam'];
   final TextEditingController _taskController = TextEditingController();
+  final TextEditingController _inviteEmailController = TextEditingController();
   String? _selectedMember;
   String? _familyId;
-  String? _errorMessage; // Add this to track errors
+  String? _errorMessage;
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
 
@@ -82,38 +102,143 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
       // Check if user exists in Firestore
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (!userDoc.exists) {
-        // New user: Create a new family and add the user to it
-        final familyRef = await _firestore.collection('families').add({
-          'createdBy': user.uid,
-          'members': [user.uid],
-        });
+        // Create a user document without a familyId (they'll join a family later)
         await _firestore.collection('users').doc(user.uid).set({
           'email': user.email,
-          'familyId': familyRef.id,
         });
-        if (mounted) { // Check if the widget is still mounted
-          setState(() {
-            _familyId = familyRef.id;
-          });
-        }
       } else {
-        if (mounted) { // Check if the widget is still mounted
-          setState(() {
-            _familyId = userDoc.data()!['familyId'];
-          });
+        final userData = userDoc.data()!;
+        if (userData.containsKey('familyId') && userData['familyId'] != null) {
+          if (mounted) {
+            setState(() {
+              _familyId = userData['familyId'];
+            });
+          }
         }
       }
     } catch (e) {
-      if (mounted) { // Check if the widget is still mounted
+      if (mounted) {
         setState(() {
           _errorMessage = 'Error setting up user: $e';
         });
+        if (mounted) { // Added mounted check
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to set up user: $e')),
+          );
+        }
+      }
+    }
+  }
+  
+  Future<void> _inviteFamilyMember() async {
+    final email = _inviteEmailController.text.trim();
+    if (email.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter an email address.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User not authenticated. Please sign in again.')),
+          );
+        }
+        return;
+      }
+
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (!userDoc.exists || !userDoc.data()!.containsKey('familyId')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User data not found or family not set.')),
+          );
+        }
+        return;
+      }
+
+      final familyId = userDoc.data()!['familyId'];
+      if (familyId != _familyId) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Family ID mismatch. Please try signing out and back in.')),
+          );
+        }
+        return;
+      }
+
+      // Check if the current user is the creator of the family
+      final familyDoc = await _firestore.collection('families').doc(familyId).get();
+      if (familyDoc.data()!['createdBy'] != user.uid) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Only the family creator can invite members.')),
+          );
+        }
+        return;
+      }
+
+      // Create an invitation
+      final invitationRef = await _firestore.collection('invitations').add({
+        'familyId': familyId,
+        'email': email,
+        'createdAt': DateTime.now().toIso8601String(),
+        'used': false,
+      });
+
+      // In a real app, you'd send an email with the invitation key (invitationRef.id).
+      // For now, we'll show it in a snackbar for testing.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Invitation created! Join key: ${invitationRef.id} (for $email)'),
+            duration: const Duration(seconds: 10),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create invitation: $e')),
+        );
       }
     }
   }
 
+  void _showInviteDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Invite a Family Member'),
+        content: TextField(
+          controller: _inviteEmailController,
+          decoration: const InputDecoration(labelText: 'Email Address'),
+          keyboardType: TextInputType.emailAddress,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _inviteFamilyMember();
+            },
+            child: const Text('Invite'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _addTask() async {
-        _selectedMember = null;
+    _selectedMember = null;
     final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -178,14 +303,14 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
         _taskController.clear();
         _selectedMember = null;
       } catch (e) {
-        if (mounted) { // Check if the widget is still mounted
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Failed to add task: $e')),
           );
         }
       }
     } else {
-      if (mounted) { // Check if the widget is still mounted
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Family ID not set. Please try signing out and back in.')),
         );
@@ -225,6 +350,11 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
         title: const Text('Family To-Do List'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_add),
+            onPressed: _showInviteDialog,
+            tooltip: 'Invite Family Member',
+          ),
+          IconButton(
             icon: const Icon(Icons.shopping_cart),
             onPressed: () {
               Navigator.push(
@@ -246,7 +376,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
       body: _errorMessage != null
           ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
           : _familyId == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: CircularProgressIndicator()) // Simplified since this case shouldn't happen
               : StreamBuilder<QuerySnapshot>(
                   stream: _firestore
                       .collection('families')
@@ -316,6 +446,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
   @override
   void dispose() {
     _taskController.dispose();
+    _inviteEmailController.dispose();
     super.dispose();
   }
 }
