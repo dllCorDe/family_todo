@@ -1,46 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ShoppingListScreen extends StatefulWidget {
-  const ShoppingListScreen({super.key});
+  final String? familyId;
+
+  const ShoppingListScreen({super.key, this.familyId});
 
   @override
   State<ShoppingListScreen> createState() => _ShoppingListScreenState();
 }
 
 class _ShoppingListScreenState extends State<ShoppingListScreen> {
-  // List to store shopping items
-  List<String> _shoppingItems = [];
-
-  // Controller for the text field in the dialog
   final TextEditingController _itemController = TextEditingController();
+  final _firestore = FirebaseFirestore.instance;
 
-  // SharedPreferences instance
-  late SharedPreferences _prefs;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadItems();
-  }
-
-  // Load items from SharedPreferences
-  Future<void> _loadItems() async {
-    _prefs = await SharedPreferences.getInstance();
-    final List<String>? items = _prefs.getStringList('shopping_items');
-    if (items != null) {
-      setState(() {
-        _shoppingItems = items;
-      });
-    }
-  }
-
-  // Save items to SharedPreferences
-  Future<void> _saveItems() async {
-    await _prefs.setStringList('shopping_items', _shoppingItems);
-  }
-
-  // Method to add a new shopping item
   void _addItem() async {
     final String? newItem = await showDialog<String>(
       context: context,
@@ -67,25 +40,28 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
       ),
     );
 
-    if (newItem != null && newItem.isNotEmpty) {
-      setState(() {
-        _shoppingItems.add(newItem);
-      });
-      await _saveItems(); // Save items after adding
+    if (newItem != null && newItem.isNotEmpty && widget.familyId != null) {
+      await _firestore
+          .collection('families')
+          .doc(widget.familyId)
+          .collection('shopping_items')
+          .add({'name': newItem});
       _itemController.clear();
     }
   }
 
-  // Method to delete a shopping item
-  void _deleteItem(int index) {
-    final String itemName = _shoppingItems[index];
-    setState(() {
-      _shoppingItems.removeAt(index);
-    });
-    _saveItems(); // Save items after deleting
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Item "$itemName" deleted')),
-    );
+  void _deleteItem(String itemId, String itemName) {
+    if (widget.familyId != null) {
+      _firestore
+          .collection('families')
+          .doc(widget.familyId)
+          .collection('shopping_items')
+          .doc(itemId)
+          .delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Item "$itemName" deleted')),
+      );
+    }
   }
 
   @override
@@ -94,26 +70,44 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
       appBar: AppBar(
         title: const Text('Shopping List'),
       ),
-      body: _shoppingItems.isEmpty
-          ? const Center(child: Text('Let’s start adding items!'))
-          : ListView.builder(
-              itemCount: _shoppingItems.length,
-              itemBuilder: (context, index) {
-                return Dismissible(
-                  key: Key(_shoppingItems[index]),
-                  background: Container(
-                    color: Colors.red,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16.0),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  direction: DismissDirection.endToStart,
-                  onDismissed: (direction) {
-                    _deleteItem(index);
+      body: widget.familyId == null
+          ? const Center(child: CircularProgressIndicator())
+          : StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('families')
+                  .doc(widget.familyId)
+                  .collection('shopping_items')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('Let’s start adding items!'));
+                }
+                final items = snapshot.data!.docs;
+                return ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final itemData = items[index].data() as Map<String, dynamic>;
+                    final itemName = itemData['name'] as String;
+                    return Dismissible(
+                      key: Key(items[index].id),
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 16.0),
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      direction: DismissDirection.endToStart,
+                      onDismissed: (direction) {
+                        _deleteItem(items[index].id, itemName);
+                      },
+                      child: ListTile(
+                        title: Text(itemName),
+                      ),
+                    );
                   },
-                  child: ListTile(
-                    title: Text(_shoppingItems[index]),
-                  ),
                 );
               },
             ),

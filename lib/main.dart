@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'task.dart';
 import 'shopping_list.dart';
@@ -55,35 +55,65 @@ class ToDoHomePage extends StatefulWidget {
 }
 
 class _ToDoHomePageState extends State<ToDoHomePage> {
-  List<Task> _tasks = [];
   final List<String> _familyMembers = ['Mom', 'Dad', 'Alex', 'Sam'];
   final TextEditingController _taskController = TextEditingController();
   String? _selectedMember;
-  late SharedPreferences _prefs;
+  String? _familyId;
+  String? _errorMessage; // Add this to track errors
+  final _firestore = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
 
   @override
   void initState() {
     super.initState();
-    _loadTasks();
+    _setupUserAndFamily();
   }
 
-  Future<void> _loadTasks() async {
-    _prefs = await SharedPreferences.getInstance();
-    final List<String>? taskStrings = _prefs.getStringList('tasks');
-    if (taskStrings != null) {
-      setState(() {
-        _tasks = taskStrings.map((taskString) => Task.fromJson(taskString)).toList();
-      });
+  Future<void> _setupUserAndFamily() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        setState(() {
+          _errorMessage = 'User not authenticated. Please sign in again.';
+        });
+        return;
+      }
+
+      // Check if user exists in Firestore
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (!userDoc.exists) {
+        // New user: Create a new family and add the user to it
+        final familyRef = await _firestore.collection('families').add({
+          'createdBy': user.uid,
+          'members': [user.uid],
+        });
+        await _firestore.collection('users').doc(user.uid).set({
+          'email': user.email,
+          'familyId': familyRef.id,
+        });
+        if (mounted) { // Check if the widget is still mounted
+          setState(() {
+            _familyId = familyRef.id;
+          });
+        }
+      } else {
+        if (mounted) { // Check if the widget is still mounted
+          setState(() {
+            _familyId = userDoc.data()!['familyId'];
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) { // Check if the widget is still mounted
+        setState(() {
+          _errorMessage = 'Error setting up user: $e';
+        });
+      }
     }
   }
 
-  Future<void> _saveTasks() async {
-    final List<String> taskStrings = _tasks.map((task) => task.toJson()).toList();
-    await _prefs.setStringList('tasks', taskStrings);
-  }
-
   void _addTask() async {
-    _selectedMember = null;
+        _selectedMember = null;
     final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -138,35 +168,54 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
       ),
     );
 
-    if (result != null) {
-      setState(() {
-        _tasks.add(Task(
-          name: result['taskName'],
-          assignedMember: result['assignedMember'],
-        ));
-      });
-      await _saveTasks();
-      _taskController.clear();
-      _selectedMember = null;
+    if (result != null && _familyId != null) {
+      try {
+        await _firestore.collection('families').doc(_familyId).collection('tasks').add({
+          'name': result['taskName'],
+          'isCompleted': false,
+          'assignedMember': result['assignedMember'],
+        });
+        _taskController.clear();
+        _selectedMember = null;
+      } catch (e) {
+        if (mounted) { // Check if the widget is still mounted
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to add task: $e')),
+          );
+        }
+      }
+    } else {
+      if (mounted) { // Check if the widget is still mounted
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Family ID not set. Please try signing out and back in.')),
+        );
+      }
     }
   }
 
-  void _toggleTaskCompletion(int index) {
-    setState(() {
-      _tasks[index].isCompleted = !_tasks[index].isCompleted;
-    });
-    _saveTasks();
+  void _toggleTaskCompletion(String taskId, bool currentValue) {
+    if (_familyId != null) {
+      _firestore
+          .collection('families')
+          .doc(_familyId)
+          .collection('tasks')
+          .doc(taskId)
+          .update({'isCompleted': !currentValue});
+    }
   }
 
-  void _deleteTask(int index) {
-    final String taskName = _tasks[index].name;
-    setState(() {
-      _tasks.removeAt(index);
-    });
-    _saveTasks();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Task "$taskName" deleted')),
-    );
+  void _deleteTask(String taskId, String taskName) {
+    if (_familyId != null) {
+      _firestore
+          .collection('families')
+          .doc(_familyId)
+          .collection('tasks')
+          .doc(taskId)
+          .delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Task "$taskName" deleted')),
+      );
+    }
   }
 
   @override
@@ -180,7 +229,7 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ShoppingListScreen()),
+                MaterialPageRoute(builder: (context) => ShoppingListScreen(familyId: _familyId)),
               );
             },
             tooltip: 'Go to Shopping List',
@@ -188,51 +237,75 @@ class _ToDoHomePageState extends State<ToDoHomePage> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
+              await _auth.signOut();
             },
             tooltip: 'Logout',
           ),
         ],
       ),
-      body: _tasks.isEmpty
-          ? const Center(child: Text('Let’s start adding tasks!'))
-          : ListView.builder(
-              itemCount: _tasks.length,
-              itemBuilder: (context, index) {
-                return Dismissible(
-                  key: Key(_tasks[index].name),
-                  background: Container(
-                    color: Colors.red,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16.0),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  direction: DismissDirection.endToStart,
-                  onDismissed: (direction) {
-                    _deleteTask(index);
-                  },
-                  child: ListTile(
-                    leading: Checkbox(
-                      value: _tasks[index].isCompleted,
-                      onChanged: (value) {
-                        _toggleTaskCompletion(index);
+      body: _errorMessage != null
+          ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
+          : _familyId == null
+              ? const Center(child: CircularProgressIndicator())
+              : StreamBuilder<QuerySnapshot>(
+                  stream: _firestore
+                      .collection('families')
+                      .doc(_familyId)
+                      .collection('tasks')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return const Center(child: Text('Let’s start adding tasks!'));
+                    }
+                    final tasks = snapshot.data!.docs;
+                    return ListView.builder(
+                      itemCount: tasks.length,
+                      itemBuilder: (context, index) {
+                        final taskData = tasks[index].data() as Map<String, dynamic>;
+                        final task = Task(
+                          name: taskData['name'],
+                          isCompleted: taskData['isCompleted'],
+                          assignedMember: taskData['assignedMember'],
+                        );
+                        return Dismissible(
+                          key: Key(tasks[index].id),
+                          background: Container(
+                            color: Colors.red,
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 16.0),
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          direction: DismissDirection.endToStart,
+                          onDismissed: (direction) {
+                            _deleteTask(tasks[index].id, task.name);
+                          },
+                          child: ListTile(
+                            leading: Checkbox(
+                              value: task.isCompleted,
+                              onChanged: (value) {
+                                _toggleTaskCompletion(tasks[index].id, task.isCompleted);
+                              },
+                            ),
+                            title: Text(
+                              task.name,
+                              style: TextStyle(
+                                decoration: task.isCompleted
+                                    ? TextDecoration.lineThrough
+                                    : TextDecoration.none,
+                              ),
+                            ),
+                            subtitle: task.assignedMember != null
+                                ? Text('Assigned to: ${task.assignedMember}')
+                                : null,
+                          ),
+                        );
                       },
-                    ),
-                    title: Text(
-                      _tasks[index].name,
-                      style: TextStyle(
-                        decoration: _tasks[index].isCompleted
-                            ? TextDecoration.lineThrough
-                            : TextDecoration.none,
-                      ),
-                    ),
-                    subtitle: _tasks[index].assignedMember != null
-                        ? Text('Assigned to: ${_tasks[index].assignedMember}')
-                        : null,
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addTask,
         child: const Icon(Icons.add),
