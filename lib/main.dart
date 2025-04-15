@@ -39,12 +39,12 @@ class FamilyToDoApp extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasData) {
-            // Check if the user has a familyId
-            return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance
+            // Listen to the user's document in real-time
+            return StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
                   .collection('users')
                   .doc(snapshot.data!.uid)
-                  .get(),
+                  .snapshots(),
               builder: (context, userSnapshot) {
                 if (userSnapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

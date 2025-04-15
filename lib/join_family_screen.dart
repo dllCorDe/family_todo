@@ -88,7 +88,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   }
 
   Future<void> _createFamily() async {
-    try {
+      try {
       final user = _auth.currentUser;
       if (user == null) {
         setState(() {
@@ -103,10 +103,14 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         'members': [user.uid],
       });
 
-      // Update the user's familyId
-      await _firestore.collection('users').doc(user.uid).update({
-        'familyId': familyRef.id,
-      });
+      // Ensure the user document exists and update the familyId
+      await _firestore.collection('users').doc(user.uid).set(
+        {
+          'email': user.email,
+          'familyId': familyRef.id,
+        },
+        SetOptions(merge: true), // Merge with existing document if it exists
+      );
 
       // Navigation to ToDoHomePage will be handled by the StreamBuilder in main.dart
     } catch (e) {
@@ -121,6 +125,15 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Join or Create a Family'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await _auth.signOut();
+            },
+            tooltip: 'Logout',
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
