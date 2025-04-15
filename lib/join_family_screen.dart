@@ -64,10 +64,15 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         return;
       }
 
-      // Update the user's familyId
-      await _firestore.collection('users').doc(user.uid).update({
-        'familyId': invitationData['familyId'],
-      });
+      final familyId = invitationData['familyId'];
+      // Update the user's familyIds and set currentFamilyId
+      await _firestore.collection('users').doc(user.uid).set(
+        {
+          'familyIds': FieldValue.arrayUnion([familyId]),
+          'currentFamilyId': familyId,
+        },
+        SetOptions(merge: true),
+      );
 
       // Mark the invitation as used
       await _firestore.collection('invitations').doc(joinKey).update({
@@ -75,11 +80,11 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
       });
 
       // Add the user to the family's members list
-      await _firestore.collection('families').doc(invitationData['familyId']).update({
+      await _firestore.collection('families').doc(familyId).update({
         'members': FieldValue.arrayUnion([user.uid]),
       });
 
-      // Navigate to the ToDoHomePage (handled by the StreamBuilder in main.dart)
+      // Navigation to ToDoHomePage will be handled by the StreamBuilder in main.dart
     } catch (e) {
       setState(() {
         _errorMessage = 'Error joining family: $e';
@@ -88,7 +93,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   }
 
   Future<void> _createFamily() async {
-      try {
+    try {
       final user = _auth.currentUser;
       if (user == null) {
         setState(() {
@@ -103,13 +108,13 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         'members': [user.uid],
       });
 
-      // Ensure the user document exists and update the familyId
+      // Update the user's familyIds and set currentFamilyId
       await _firestore.collection('users').doc(user.uid).set(
         {
-          'email': user.email,
-          'familyId': familyRef.id,
+          'familyIds': FieldValue.arrayUnion([familyRef.id]),
+          'currentFamilyId': familyRef.id,
         },
-        SetOptions(merge: true), // Merge with existing document if it exists
+        SetOptions(merge: true),
       );
 
       // Navigation to ToDoHomePage will be handled by the StreamBuilder in main.dart

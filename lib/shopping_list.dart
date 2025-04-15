@@ -1,67 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class ShoppingListScreen extends StatefulWidget {
-  final String? familyId;
+// Define the ShoppingItem class
+class ShoppingItem {
+  final String name;
 
-  const ShoppingListScreen({super.key, this.familyId});
+  ShoppingItem({required this.name});
+}
+
+class ShoppingListScreen extends StatefulWidget {
+  final String familyId;
+
+  const ShoppingListScreen({super.key, required this.familyId});
 
   @override
   State<ShoppingListScreen> createState() => _ShoppingListScreenState();
 }
 
 class _ShoppingListScreenState extends State<ShoppingListScreen> {
-  final TextEditingController _itemController = TextEditingController();
   final _firestore = FirebaseFirestore.instance;
+  final TextEditingController _itemController = TextEditingController();
 
   void _addItem() async {
-    final String? newItem = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add a New Item'),
-        content: TextField(
-          controller: _itemController,
-          decoration: const InputDecoration(hintText: 'Enter item name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (_itemController.text.isNotEmpty) {
-                Navigator.pop(context, _itemController.text);
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-
-    if (newItem != null && newItem.isNotEmpty && widget.familyId != null) {
-      await _firestore
-          .collection('families')
-          .doc(widget.familyId)
-          .collection('shopping_items')
-          .add({'name': newItem});
+    if (_itemController.text.isNotEmpty) {
+      await _firestore.collection('families').doc(widget.familyId).collection('shopping_items').add({
+        'name': _itemController.text,
+      });
       _itemController.clear();
     }
   }
 
   void _deleteItem(String itemId, String itemName) {
-    if (widget.familyId != null) {
-      _firestore
-          .collection('families')
-          .doc(widget.familyId)
-          .collection('shopping_items')
-          .doc(itemId)
-          .delete();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Item "$itemName" deleted')),
-      );
-    }
+    _firestore.collection('families').doc(widget.familyId).collection('shopping_items').doc(itemId).delete();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Item "$itemName" deleted')),
+    );
   }
 
   @override
@@ -70,9 +43,27 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
       appBar: AppBar(
         title: const Text('Shopping List'),
       ),
-      body: widget.familyId == null
-          ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<QuerySnapshot>(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _itemController,
+                    decoration: const InputDecoration(hintText: 'Add a new item'),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: _addItem,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
                   .collection('families')
                   .doc(widget.familyId)
@@ -83,14 +74,14 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text('Let’s start adding items!'));
+                  return const Center(child: Text('No items yet! Let’s add some.'));
                 }
                 final items = snapshot.data!.docs;
                 return ListView.builder(
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final itemData = items[index].data() as Map<String, dynamic>;
-                    final itemName = itemData['name'] as String;
+                    final item = ShoppingItem(name: itemData['name']);
                     return Dismissible(
                       key: Key(items[index].id),
                       background: Container(
@@ -101,19 +92,18 @@ class _ShoppingListScreenState extends State<ShoppingListScreen> {
                       ),
                       direction: DismissDirection.endToStart,
                       onDismissed: (direction) {
-                        _deleteItem(items[index].id, itemName);
+                        _deleteItem(items[index].id, item.name);
                       },
                       child: ListTile(
-                        title: Text(itemName),
+                        title: Text(item.name),
                       ),
                     );
                   },
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addItem,
-        child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
