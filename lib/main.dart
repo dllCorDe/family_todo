@@ -52,8 +52,11 @@ class FamilyToDoApp extends StatelessWidget {
                 }
                 if (userSnapshot.hasData && userSnapshot.data!.exists) {
                   final userData = userSnapshot.data!.data() as Map<String, dynamic>;
-                  if (userData.containsKey('currentFamilyId') && userData['currentFamilyId'] != null) {
-                    return ToDoHomePage(currentFamilyId: userData['currentFamilyId']);
+                  final List<String> familyIds = List<String>.from(userData['familyIds'] ?? []);
+                  final String? currentFamilyId = userData['currentFamilyId'];
+                  // Only show ToDoHomePage if currentFamilyId is in familyIds
+                  if (currentFamilyId != null && familyIds.contains(currentFamilyId)) {
+                    return ToDoHomePage(currentFamilyId: currentFamilyId);
                   }
                 }
                 return JoinFamilyScreen();

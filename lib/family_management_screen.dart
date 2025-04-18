@@ -112,6 +112,18 @@ class _FamilyManagementScreenState extends State<FamilyManagementScreen> {
       await _firestore.collection('families').doc(familyId).update({
         'members': FieldValue.arrayRemove([memberId]),
       });
+      print('Removed $memberId from family $familyId members list');
+
+      // Get the user's document to check their familyIds and currentFamilyId
+      final memberDoc = await _firestore.collection('users').doc(memberId).get();
+      if (!memberDoc.exists) {
+        print('Member document for $memberId not found');
+        return;
+      }
+
+      final memberData = memberDoc.data() as Map<String, dynamic>;
+      final List<String> memberFamilyIds = List<String>.from(memberData['familyIds'] ?? []);
+      final String? currentFamilyId = memberData['currentFamilyId'];
 
       // Remove the family from the member's familyIds
       await _firestore.collection('users').doc(memberId).set(
@@ -120,15 +132,24 @@ class _FamilyManagementScreenState extends State<FamilyManagementScreen> {
         },
         SetOptions(merge: true),
       );
+      print('Removed $familyId from $memberId\'s familyIds: $memberFamilyIds');
 
-      // If the removed member is the current user, set their currentFamilyId to null
-      if (memberId == user.uid) {
-        await _firestore.collection('users').doc(user.uid).set(
+      // Update currentFamilyId if it matches the removed family
+      if (currentFamilyId == familyId) {
+        memberFamilyIds.remove(familyId); // Update local copy after removal
+        String? newCurrentFamilyId;
+        if (memberFamilyIds.isNotEmpty) {
+          newCurrentFamilyId = memberFamilyIds.first; // Set to the first remaining family
+        } else {
+          newCurrentFamilyId = null; // No families left
+        }
+        await _firestore.collection('users').doc(memberId).set(
           {
-            'currentFamilyId': null,
+            'currentFamilyId': newCurrentFamilyId,
           },
           SetOptions(merge: true),
         );
+        print('Updated $memberId\'s currentFamilyId from $familyId to $newCurrentFamilyId');
       }
 
       if (mounted) {
@@ -137,6 +158,7 @@ class _FamilyManagementScreenState extends State<FamilyManagementScreen> {
         );
       }
     } catch (e) {
+      print('Error removing member: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to remove member: $e')),
