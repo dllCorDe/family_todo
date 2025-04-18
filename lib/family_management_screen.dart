@@ -95,7 +95,18 @@ class _FamilyManagementScreenState extends State<FamilyManagementScreen> {
   Future<void> _removeMember(String familyId, String memberId) async {
     try {
       final user = _auth.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User not authenticated. Please sign in again.')),
+          );
+        }
+        return;
+      }
+
+      // Force refresh the user's token to ensure it's valid
+      await user.getIdToken(true);
+      print('Token refreshed for user: ${user.uid}');
 
       // Check if the current user is the creator of the family
       final familyDoc = await _firestore.collection('families').doc(familyId).get();
